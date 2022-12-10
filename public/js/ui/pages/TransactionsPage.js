@@ -10,7 +10,12 @@ class TransactionsPage {
    * Сохраняет переданный элемент и регистрирует события
    * через registerEvents()
    * */
-  constructor( element ) {
+  constructor(element) {
+    if (!element) {
+      throw new Error("Элемент не существует");
+    }
+    this.element = element;
+    this.registerEvents();
 
   }
 
@@ -18,6 +23,7 @@ class TransactionsPage {
    * Вызывает метод render для отрисовки страницы
    * */
   update() {
+    this.render();
 
   }
 
@@ -28,7 +34,17 @@ class TransactionsPage {
    * TransactionsPage.removeAccount соответственно
    * */
   registerEvents() {
+    this.element.addEventListener("click", (event) => {
+      const removeAccountBtn = event.target.closest("button.remove-account");
+      const removeTransactionBtn = event.target.closest("button.transaction__remove");
+      if (removeAccountBtn) {
+        this.removeAccount();
+      }
 
+      if (removeTransactionBtn) {
+        this.removeTransaction(removeTransactionBtn.dataset.id);
+      }
+    });
   }
 
   /**
@@ -41,7 +57,21 @@ class TransactionsPage {
    * для обновления приложения
    * */
   removeAccount() {
-
+    if (this.lastOptions === undefined) {
+      return;
+    }
+    const question = confirm("Вы действительно хотите удалить счёт?");
+    if (question) {
+      Account.remove({ id: this.lastOptions.account_id }, (err, respone) => {
+        if (respone.success === true) {
+          App.updateWidgets();
+          App.updateForms();
+        } else {
+          console.log(err);
+        }
+        this.clear();
+      });
+    }
   }
 
   /**
@@ -50,7 +80,17 @@ class TransactionsPage {
    * По удалению транзакции вызовите метод App.update(),
    * либо обновляйте текущую страницу (метод update) и виджет со счетами
    * */
-  removeTransaction( id ) {
+  removeTransaction(id) {
+    const question = confirm("Вы действительно хотите удалить эту транзакцию?");
+    if (question) {
+      Transaction.remove({ id }, (err, respone) => {
+        if (respone.success === true) {
+          App.update();
+        } else {
+          console.log(err);
+        }
+      });
+    }
 
   }
 
@@ -60,7 +100,25 @@ class TransactionsPage {
    * Получает список Transaction.list и полученные данные передаёт
    * в TransactionsPage.renderTransactions()
    * */
-  render(options){
+  render(options) {
+    this.lastOptions = options;
+    if (this.lastOptions === undefined) {
+      return
+    }
+    Account.get(options.account_id, (err, response) => {
+      if (response.success === true) {
+        this.renderTitle(response.data.name);
+      } else {
+        console.log(err);
+      }
+    });
+    Transaction.list(options, (err, response) => {
+      if (response.success === true) {
+        this.renderTransactions(response.data);
+      } else {
+        console.log(err);
+      }
+    });
 
   }
 
@@ -70,13 +128,17 @@ class TransactionsPage {
    * Устанавливает заголовок: «Название счёта»
    * */
   clear() {
+    this.renderTransactions([]);
+    this.renderTitle("Название счета");
+    this.lastOptions = undefined;
 
   }
 
   /**
    * Устанавливает заголовок в элемент .content-title
    * */
-  renderTitle(name){
+  renderTitle(name) {
+    this.element.querySelector(".content-title").innerText = name;
 
   }
 
@@ -84,15 +146,80 @@ class TransactionsPage {
    * Форматирует дату в формате 2019-03-10 03:20:41 (строка)
    * в формат «10 марта 2019 г. в 03:20»
    * */
-  formatDate(date){
+  formatDate(date) {
+    let year = date.slice(0, 4);
+    let month = Number(date.slice(5, 7));
+    let day = date.slice(8, 10);
+    let hours = date.slice(11, 13);
+    let minutes = date.slice(14, 16);
 
+    switch (month) {
+      case 1:
+        month = "января";
+        break;
+      case 2:
+        month = "февраля";
+        break;
+      case 3:
+        month = "марта";
+        break;
+      case 4:
+        month = "апреля";
+        break;
+      case 5:
+        month = "мая";
+        break;
+      case 6:
+        month = "июня";
+        break;
+      case 7:
+        month = "июля";
+        break;
+      case 8:
+        month = "августа";
+        break;
+      case 9:
+        month = "сентября";
+        break;
+      case 10:
+        month = "октября";
+        break;
+      case 11:
+        month = "ноября";
+        break;
+      default:
+        month = "декабря";
+    }
+
+    return `${day} ${month} ${year} г. в ${hours}:${minutes}`;
   }
 
   /**
    * Формирует HTML-код транзакции (дохода или расхода).
    * item - объект с информацией о транзакции
    * */
-  getTransactionHTML(item){
+  getTransactionHTML(item) {
+    return `<div class="transaction transaction_${item.type} row">
+    <div class="col-md-7 transaction__details" >
+      <div class="transaction__icon">
+          <span class="fa fa-money fa-2x"></span>
+      </div>
+      <div class="transaction__info" style = "margin-left: 30px">
+          <h4 class="transaction__title">${item.name}</h4>
+          <div class="transaction__date">${this.formatDate(item.created_at)}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="transaction__summ">
+          <span class="currency">${item.sum}₽</span>
+      </div>
+    </div>
+    <div class="col-md-2 transaction__controls">
+        <button class="btn btn-danger transaction__remove" data-id="${item.id}">
+            <i class="fa fa-trash"></i>  
+        </button>
+    </div>
+</div>`;
 
   }
 
@@ -100,7 +227,17 @@ class TransactionsPage {
    * Отрисовывает список транзакций на странице
    * используя getTransactionHTML
    * */
-  renderTransactions(data){
+  renderTransactions(data) {
+    const content = this.element.querySelector(".content");
+    content.textContent = "";
+    for (let item of data) {
+      const div = document.createElement("div");
+      const section = document.createElement("section");
+      const heading = document.createElement("h1");
+      section.classList.add("content-header");
+      heading.insertAdjacentHTML("beforeend", this.getTransactionHTML(item));
+      content.appendChild(div).appendChild(section).appendChild(heading);
+    }
 
   }
 }
